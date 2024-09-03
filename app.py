@@ -10,10 +10,8 @@ import os
 load_dotenv()
 
 # Retrieve the OpenAI API key from environment variables
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-
-# Your OpenAI API key
 
 # Function to perform statistical analysis on data
 def perform_statistical_analysis(data, selected_columns):
@@ -77,7 +75,7 @@ def generate_llm_prompt_for_selected_columns(analysis_results):
 # Function to get visualization suggestions using LangChain
 def get_visualization_suggestions(prompt, api_key):
     # Initialize ChatOpenAI with the API key and model
-    llm = ChatOpenAI(openai_api_key=api_key, model="gpt-4o-mini")
+    llm = ChatOpenAI(openai_api_key=api_key, model="gpt-4")
 
     # Create a chat prompt template using LangChain
     chat_prompt = ChatPromptTemplate.from_messages(
@@ -117,10 +115,10 @@ if uploaded_file:
     st.dataframe(data)
 
     # Column selection for visualization
-    st.write("Select Two Columns for Visualization:")
-    selected_columns = st.multiselect("Select columns", data.columns.tolist(), default=data.columns.tolist()[:2])
+    st.write("Select Columns for Visualization (at least two):")
+    selected_columns = st.multiselect("Select columns", data.columns.tolist())
 
-    if len(selected_columns) == 2:
+    if len(selected_columns) >= 2:
         # Perform statistical analysis for selected columns
         analysis_results = perform_statistical_analysis(data, selected_columns)
         
@@ -162,6 +160,6 @@ if uploaded_file:
                 except Exception as e:
                     st.error(f"An error occurred while executing the code: {e}")
     else:
-        st.write("Please select exactly two columns for visualization.")
+        st.write("Please select at least two columns for visualization.")
 else:
     st.write("Please upload a CSV file to see its column information and statistical analysis.")

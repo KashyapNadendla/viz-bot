@@ -1,9 +1,11 @@
 import streamlit as st
 import pandas as pd
 import json
+import seaborn as sns
+import matplotlib.pyplot as plt
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain.chat_models import ChatOpenAI  # Corrected import
+from langchain.chat_models import ChatOpenAI 
 from dotenv import load_dotenv
 import os
 
@@ -11,6 +13,7 @@ import os
 load_dotenv()
 
 # Retrieve the OpenAI API key from environment variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Function to convert the dataset into JSON format
 def convert_data_to_json(data):
@@ -68,7 +71,7 @@ def analyze_data_with_llm(json_data, prompt_type="analysis"):
     return response.strip()
 
 # Streamlit app user interface
-st.title("Send Data to LLM in JSON Format Using LangChain")
+st.title("Data Analysis and EDA with LLM Integration")
 
 # File uploader widget to allow users to upload a CSV file
 uploaded_file = st.file_uploader("Upload a CSV file", type="csv")
@@ -78,12 +81,12 @@ if uploaded_file:
     data = pd.read_csv(uploaded_file)
 
     # Display the uploaded data in the Streamlit app
-    st.write("Uploaded Data:")
+    st.write("## Uploaded Data")
     st.dataframe(data)
     
     # Display the number of rows in the dataset
     num_rows = data.shape[0]
-    st.write(f"Number of rows in the dataset: {num_rows}")
+    st.write(f"**Number of rows in the dataset:** {num_rows}")
     
     # Check if the dataset has more than 10,000 rows and provide an option to limit it to 500 rows
     if num_rows > 10000:
@@ -100,12 +103,64 @@ if uploaded_file:
     # Convert the dataset to JSON format for analysis
     json_data = convert_data_to_json(data)
 
+    # Exploratory Data Analysis (EDA)
+    st.header("Exploratory Data Analysis")
+
+    # Show basic statistics
+    if st.checkbox("Show basic statistics"):
+        st.write("### Basic Statistics")
+        st.write(data.describe())
+
+    # Correlation Matrix
+    if st.checkbox("Show correlation matrix"):
+        st.write("### Correlation Matrix")
+        corr_matrix = data.corr()
+        st.write(corr_matrix)
+
+        # Heatmap
+        st.write("#### Correlation Heatmap")
+        fig, ax = plt.subplots()
+        sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', ax=ax)
+        st.pyplot(fig)
+
+    # Pairplot
+    if st.checkbox("Show pairplot"):
+        st.write("### Pairplot")
+        fig = sns.pairplot(data)
+        st.pyplot(fig)
+
+    # Histograms
+    if st.checkbox("Show histograms"):
+        st.write("### Histograms")
+        numeric_columns = data.select_dtypes(include=['float', 'int']).columns
+        for col in numeric_columns:
+            st.write(f"#### Histogram for {col}")
+            fig, ax = plt.subplots()
+            sns.histplot(data[col], kde=True, ax=ax)
+            st.pyplot(fig)
+
+    # Scatter plots
+    if st.checkbox("Show scatter plots"):
+        st.write("### Scatter Plots")
+        numeric_columns = data.select_dtypes(include=['float', 'int']).columns
+        if len(numeric_columns) >= 2:
+            x_axis = st.selectbox("Select X-axis variable", options=numeric_columns)
+            y_axis = st.selectbox("Select Y-axis variable", options=numeric_columns)
+            if x_axis and y_axis:
+                st.write(f"#### Scatter plot between {x_axis} and {y_axis}")
+                fig, ax = plt.subplots()
+                sns.scatterplot(x=data[x_axis], y=data[y_axis], ax=ax)
+                st.pyplot(fig)
+        else:
+            st.write("Not enough numerical columns for scatter plot.")
+
     # Button to trigger LLM analysis of the dataset
+    st.header("LLM Analysis and Suggestions")
     if st.button("Analyze Data"):
         analysis_response = analyze_data_with_llm(json_data, prompt_type="analysis")
         
         # Display the analysis and suggestions from the LLM
-        st.write("LLM Analysis and Suggestions:")
+        st.write("### Data Analysis and Improvement Suggestions:")
         st.write(analysis_response)
 
     # Button to trigger LLM model suggestions based on the dataset
@@ -113,7 +168,7 @@ if uploaded_file:
         model_suggestions_response = analyze_data_with_llm(json_data, prompt_type="model_suggestions")
         
         # Display the model suggestions from the LLM
-        st.write("Model Suggestions from LLM:")
+        st.write("### Model Suggestions:")
         st.write(model_suggestions_response)
     
     # Button to trigger LLM visualization suggestions based on the dataset
@@ -121,7 +176,7 @@ if uploaded_file:
         visualization_suggestions_response = analyze_data_with_llm(json_data, prompt_type="visualization_suggestions")
         
         # Display the visualization suggestions from the LLM
-        st.write("Visualization Suggestions from LLM:")
+        st.write("### Visualization Suggestions:")
         st.write(visualization_suggestions_response)
 
 else:

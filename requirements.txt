@@ -1,0 +1,9 @@
+pandas==1.5.3
+streamlit==1.25.0
+langchain==0.0.9
+openai==0.10.2
+python-dotenv==0.17.1
+seaborn==0.11.2
+matplotlib==3.4.3
+scipy==1.7.1
+missingno==0.5.0

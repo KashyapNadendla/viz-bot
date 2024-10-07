@@ -35,3 +35,14 @@ This Streamlit app allows users to upload CSV datasets, perform Exploratory Data
 - EDA: Explore data using built-in tools.
 - LLM Interaction: Request analysis, model suggestions, visualizations, and feature engineering ideas from GPT-4.
 - Large Dataset Handling: Option to limit data sent to the LLM to stay within token limits.
+
+## Steps to run code 
+```
+pip install -r requirements.txt
+```
+```
+OPENAI_API_KEY=your-openai-api-key
+```
+```
+streamlit run app.py
+```

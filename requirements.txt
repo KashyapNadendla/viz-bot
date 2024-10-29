@@ -19,6 +19,7 @@ scipy>=1.7.0
 openai>=0.28.0
 langchain>=0.2.20
 langchain-core>=0.2.26
+langchain_community>=0.0.1  # Add this line
 chromadb>=0.5.5  # Optional, only if needed
 tiktoken>=0.4.0  # Tokenizer for LLM input estimation
 

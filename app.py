@@ -15,6 +15,8 @@ from llm_analysis import llm_analysis_section
 # Load environment variables
 load_dotenv()
 
+st.set_page_config(page_title="Personal Finance Assistant", page_icon="📈")
+
 st.title("Data Analysis and EDA with LLM Integration")
 
 # File uploader widget to allow users to upload a CSV file

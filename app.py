@@ -15,9 +15,15 @@ from llm_analysis import llm_analysis_section
 # Load environment variables
 load_dotenv()
 
-st.set_page_config(page_title="Personal Finance Assistant", page_icon="📈")
+st.set_page_config(page_title="Data the Explorer", page_icon="📈")
 
-st.title("Data Analysis and EDA with LLM Integration")
+st.title("Data the Explorer")
+st.caption("Data Analysis & LLM Integration")
+
+# Brief Explanation
+st.write("""
+Data the Explorer is an interactive application tailored for comprehensive data exploration, EDA, and machine learning model evaluation. Users can upload datasets to perform detailed Exploratory Data Analysis (EDA), build and run ML models, and receive interpretations of model results. Enhanced by Large Language Models (LLMs), the app provides AI-driven recommendations on visualizations, feature engineering, and model choices, making data analysis more insightful and accessible.
+""")
 
 # File uploader widget to allow users to upload a CSV file
 uploaded_file = st.file_uploader("Upload a CSV file", type="csv")

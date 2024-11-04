@@ -10,7 +10,7 @@ from langchain.chat_models import ChatOpenAI
 # Function to get LLM-generated code for multiple visualizations
 def get_llm_visualization_code(data_sample, num_visualizations=3):
     # Initialize the LLM with GPT-4 model
-    llm = ChatOpenAI(model_name='gpt-4', temperature=0)
+    llm = ChatOpenAI(model_name='gpt-4o-mini', temperature=0)
     
     # Define the prompt for generating multiple visualization codes
     prompt_template = PromptTemplate(

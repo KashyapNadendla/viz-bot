@@ -9,7 +9,6 @@ from langchain.chat_models import ChatOpenAI
 
 # Function to get LLM-generated code for multiple visualizations
 def get_llm_visualization_code(data_sample, num_visualizations=3):
-    # Initialize the LLM with GPT-4 model
     llm = ChatOpenAI(model_name='gpt-4o-mini', temperature=0)
     
     # Define the prompt for generating multiple visualization codes
@@ -25,7 +24,7 @@ Assume that the data is already loaded into a pandas DataFrame named 'data'.
 
 Generate only the secure code. Follow these restrictions strictly:
 - The code should define {num_visualizations} Plotly figure objects named 'fig1', 'fig2', ..., 'fig{num_visualizations}'.
-- The code should not contain import statements or data loading code.
+- The code should not contain import statements or data loading code. Assume Plotly Express is already imported as 'px'.
 - Do not include any code for filesystem access, OS or system-level functions, or network operations.
 - Avoid any advanced or non-standard Python constructs; stick strictly to simple and safe Plotly figure generation commands.
 
@@ -34,43 +33,40 @@ Provide only the safe code within these constraints. Do not include any explanat
     )
     chain = LLMChain(llm=llm, prompt=prompt_template)
     code = chain.run(data_sample=data_sample, num_visualizations=num_visualizations)
-    return code.strip()
+    
+    # Clean markdown code block markers if present
+    code = code.strip()
+    if code.startswith("```python"):
+        code = code[9:]  # Remove the opening ```python
+    if code.endswith("```"):
+        code = code[:-3]  # Remove the closing ```
+    
+    return code
 
 # Function to execute the generated code safely with enhanced filtering
 def execute_visualization_code(code, data, num_visualizations=3):
-    # Disallowed patterns to search for
     disallowed_patterns = [
-        r'\bimport\b',         # Disallow any import statements
-        r'\b__\b',             # Disallow usage of double underscores
-        r'\bopen\(',           # Disallow open function
-        r'\beval\(',           # Disallow eval function
-        r'\bexec\(',           # Disallow exec function
-        r'\binput\(',          # Disallow input function
-        r'\bcompile\(',        # Disallow compile function
-        r'\bos\b',             # Disallow os module
-        r'\bsys\b',            # Disallow sys module
-        r'\bsubprocess\b',     # Disallow subprocess module
-        r'\bthreading\b',      # Disallow threading module
-        r'\bgetattr\(',        # Disallow getattr function
-        r'\bsetattr\(',        # Disallow setattr function
-        r'\bdelattr\(',        # Disallow delattr function
-        r'\bglobals\(',        # Disallow globals function
-        r'\blocals\(',         # Disallow locals function
-        r'\bvars\(',           # Disallow vars function
-        r'\bhelp\(',           # Disallow help function
+        r'\bimport\b', r'\b__\b', r'\bopen\(', r'\beval\(', r'\bexec\(', r'\binput\(', 
+        r'\bcompile\(', r'\bos\b', r'\bsys\b', r'\bsubprocess\b', r'\bthreading\b', 
+        r'\bgetattr\(', r'\bsetattr\(', r'\bdelattr\(', r'\bglobals\(', r'\blocals\(', 
+        r'\bvars\(', r'\bhelp\(',
     ]
 
+    # Check for disallowed patterns
     for pattern in disallowed_patterns:
         if re.search(pattern, code):
             raise ValueError(f"Disallowed pattern '{pattern}' found in code.")
 
-    # Parse the code to check for syntax errors
+    # Clean code from potential formatting issues
+    code = code.strip().replace('\r', '')  # Remove any carriage return characters
+    
+    # Check if the code is valid syntax
     try:
         ast.parse(code)
     except SyntaxError as e:
-        raise SyntaxError(f"Syntax error in generated code: {e}")
+        raise SyntaxError(f"Syntax error in generated code on line {e.lineno}: {e.msg} Line content: {e.text}")
 
-    # Define a restricted execution environment
+    # Safe environment for execution
     safe_globals = {
         'pd': pd,
         'px': px,
@@ -93,6 +89,22 @@ def execute_visualization_code(code, data, num_visualizations=3):
         figs.append(fig)
     return figs
 
+# Function to filter data based on selected categorical columns and values
+def filter_data(data):
+    st.sidebar.header("Data Filtering Options")
+    
+    # Only allow selection of categorical columns for filtering
+    categorical_columns = data.select_dtypes(include=['object', 'category']).columns.tolist()
+    selected_columns = st.sidebar.multiselect("Select Categorical Columns for Filtering", options=categorical_columns)
+
+    # Filter based on user-selected values within each selected categorical column
+    for col in selected_columns:
+        unique_values = data[col].unique()
+        selected_values = st.sidebar.multiselect(f"Select values for '{col}'", options=unique_values, default=unique_values)
+        data = data[data[col].isin(selected_values)]
+
+    return data
+
 # Visualization section in Streamlit
 def visualization_section():
     st.header("AI-Powered Interactive Visualizations")
@@ -102,10 +114,21 @@ def visualization_section():
         return
 
     data = st.session_state['data']
-    data_sample = data.head(5).to_csv(index=False)
+
+    # Option to filter data or use the entire sample
+    data_filter_option = st.selectbox("Data Sample Option", ["Use Entire Dataset", "Filter by Categorical Variables"])
+    
+    if data_filter_option == "Filter by Categorical Variables":
+        filtered_data = filter_data(data)
+    else:
+        filtered_data = data
+
+    # Provide only the top 5 rows of the filtered data to LLM as a sample
+    data_sample = filtered_data.head(5).to_csv(index=False)
 
     st.subheader("AI-Generated Visualizations")
 
+    # Number of visualizations to generate
     num_visualizations = st.slider("Select the number of visualizations", min_value=1, max_value=5, value=3)
 
     if st.button("Generate Visualizations with AI"):
@@ -115,12 +138,11 @@ def visualization_section():
                 code = get_llm_visualization_code(data_sample, num_visualizations)
                 st.code(code, language='python')
 
-                # Execute the code safely
-                figs = execute_visualization_code(code, data, num_visualizations)
+                # Execute the code on the full filtered dataset
+                figs = execute_visualization_code(code, filtered_data, num_visualizations)
 
                 # Display the generated figures
                 for idx, fig in enumerate(figs, start=1):
                     st.plotly_chart(fig, use_container_width=True)
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-

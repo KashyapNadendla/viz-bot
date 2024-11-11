@@ -3,9 +3,11 @@ import pandas as pd
 import plotly.express as px
 import ast
 import re
+import base64
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.chat_models import ChatOpenAI
+from langchain_core.messages import HumanMessage
 
 # Function to get LLM-generated code for multiple visualizations
 def get_llm_visualization_code(data_sample, num_visualizations=3):
@@ -105,6 +107,42 @@ def filter_data(data):
 
     return data
 
+# Function to convert Plotly figures to base64
+def convert_figs_to_base64(figs):
+    images_base64 = []
+    for fig in figs:
+        img_bytes = fig.to_image(format="png", engine="kaleido")
+        img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+        images_base64.append(img_base64)
+    return images_base64
+
+# Function to send images to LLM for analysis with context
+def analyze_visualizations_with_llm(images_base64):
+    llm = ChatOpenAI(model_name="gpt-4o-mini")
+    
+    # Prepare message content with images
+    message_content = [
+        {
+            "type": "text",
+            "text": "Analyze the following images for patterns or insights in the data and understand relationships between data points.",
+        }
+    ]
+    
+    for img_base64 in images_base64:
+        message_content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{img_base64}",
+            },
+        })
+    
+    # Create the multimodal message
+    message = HumanMessage(content=message_content)
+    
+    # Send to the model
+    response = llm.invoke([message])
+    return response.content
+
 # Visualization section in Streamlit
 def visualization_section():
     st.header("AI-Powered Interactive Visualizations")
@@ -144,5 +182,15 @@ def visualization_section():
                 # Display the generated figures
                 for idx, fig in enumerate(figs, start=1):
                     st.plotly_chart(fig, use_container_width=True)
+
+                # Convert figures to base64 for LLM analysis
+                images_base64 = convert_figs_to_base64(figs)
+                
+                # Send images to LLM for analysis
+                llm_response = analyze_visualizations_with_llm(images_base64)
+                
+                st.write("LLM Analysis of Visualizations:")
+                st.write(llm_response)
+
             except Exception as e:
                 st.error(f"An error occurred: {e}")

@@ -1,36 +1,3 @@
-# import streamlit as st
-# from utils import analyze_data_with_llm
-
-# def llm_analysis_section(data):
-#     st.header("LLM Analysis and Suggestions")
-
-#     st.write("Select the type of analysis you want the LLM to perform:")
-
-#     # Create buttons for different types of LLM analyses
-#     if st.button("Analyze Data"):
-#         with st.spinner("Analyzing data..."):
-#             response = analyze_data_with_llm(data, prompt_type="analysis")
-#         st.write("### Data Analysis and Suggestions")
-#         st.write(response)
-
-#     if st.button("Suggest Models"):
-#         with st.spinner("Generating model suggestions..."):
-#             response = analyze_data_with_llm(data, prompt_type="model_suggestions")
-#         st.write("### Model Suggestions")
-#         st.write(response)
-
-#     if st.button("Visualization Suggestions"):
-#         with st.spinner("Generating visualization suggestions..."):
-#             response = analyze_data_with_llm(data, prompt_type="visualization_suggestions")
-#         st.write("### Visualization Suggestions")
-#         st.write(response)
-
-#     if st.button("Feature Engineering Suggestions"):
-#         with st.spinner("Generating feature engineering suggestions..."):
-#             response = analyze_data_with_llm(data, prompt_type="feature_engineering")
-#         st.write("### Feature Engineering Suggestions")
-#         st.write(response)
-
 import streamlit as st
 from utils import analyze_data_with_llm, get_visualization_suggestions
 

@@ -10,7 +10,7 @@ plotly>=5.0.0
 matplotlib>=3.8.0
 seaborn>=0.11.0
 missingno>=0.5.1
-kaleido
+kaleido==0.2.1
 
 # Machine learning libraries
 scikit-learn>=1.0.0

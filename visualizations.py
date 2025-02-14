@@ -9,6 +9,7 @@ import base64
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.chat_models import ChatOpenAI
+from langchain_core.messages import HumanMessage
 
 ##############################################
 # Agent 1: Code Generator
@@ -119,9 +120,8 @@ def execute_visualization_code(code, data, num_visualizations=3):
 ##############################################
 def interpret_visualizations(figs, data_summary):
     """
-    Converts each Plotly figure to a base64-encoded PNG and passes the images along
-    with a dataset summary to gpt-4o-mini to obtain a comprehensive, data-centric
-    interpretation of the visualizations.
+    Uses a multimodal approach to analyze visualizations by sending both
+    the dataset summary and base64-encoded images to GPT-4o-mini.
     """
     images_base64 = []
     for fig in figs:
@@ -130,26 +130,46 @@ def interpret_visualizations(figs, data_summary):
         images_base64.append(img_base64)
         
     llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.5)
-    prompt_template = PromptTemplate(
-        input_variables=["images_info", "data_summary"],
-        template="""
-You are an expert data scientist with deep expertise in both data visualizations and data analysis.
-Analyze the following visualizations provided as base64-encoded PNG images, and consider the accompanying dataset summary.
-Provide a comprehensive interpretation that highlights key trends, correlations, anomalies, and actionable insights derived from both the visuals and the underlying data.
+    
+    # Prepare the multimodal input for LLM
+    message_content = [
+        {
+            "type": "text",
+            "text": f"""
+You are an expert data scientist specializing in **statistical pattern detection, anomaly recognition, and visualization optimization**.
+You will receive:
+1. **A dataset summary**: Contains key numerical statistics and column names.
+2. **Base64-encoded images of visualizations**.
 
-Images:
-{images_info}
+**Your task**:
+- **Analyze the images** and detect **trends, distributions, correlations, and anomalies** in the data.
+- **Cross-reference the dataset summary** to validate key **statistical findings**.
+- **Explain why certain patterns emerge** and how they impact business or research decisions.
+- **Suggest improvements**: If the visualization does not effectively convey the insights, recommend better alternatives.
 
-Dataset Summary:
+---
+### **Dataset Summary:**
 {data_summary}
 
-Your Analysis:
+Now analyze the following visualizations and extract meaningful insights:
 """
-    )
-    images_info = "\n".join([f"data:image/png;base64,{img}" for img in images_base64])
-    chain = LLMChain(llm=llm, prompt=prompt_template)
-    interpretation = chain.run(images_info=images_info, data_summary=data_summary)
-    return interpretation.strip()
+        }
+    ]
+    
+    # Attach the images
+    for img_base64 in images_base64:
+        message_content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{img_base64}",
+            },
+        })
+
+    # Send multimodal message
+    message = HumanMessage(content=message_content)
+    response = llm.invoke([message])
+    
+    return response.content.strip()
 
 ##############################################
 # Enhanced Multi-Agent Discussion (Main Page)

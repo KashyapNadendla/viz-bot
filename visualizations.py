@@ -12,20 +12,25 @@ from langchain.chat_models import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 ##############################################
-# Agent 1: Code Generator
+# Agent 1: Code Generator (Improved with Dataset Stats)
 ##############################################
-def generate_visualization_code(data_sample, num_visualizations=3):
+def generate_visualization_code(data_sample, dataset_stats, num_visualizations=3):
     """
     Uses gpt-4o-mini to generate secure Python code (without import statements)
     that creates a specified number of Plotly Express figures (fig1, fig2, ...).
+    The dataset statistics are included in the prompt to generate more meaningful visualizations.
     """
     llm = ChatOpenAI(model_name='gpt-4o-mini', temperature=0.5)
     prompt_template = PromptTemplate(
-        input_variables=["data_sample", "num_visualizations"],
+        input_variables=["data_sample", "dataset_stats", "num_visualizations"],
         template="""
-You are a data visualization expert. Given the following data sample in CSV format:
+You are a data visualization expert with strong statistical knowledge. Given the following dataset sample in CSV format and its statistics:
 
+### Dataset Sample:
 {data_sample}
+
+### Dataset Statistics:
+{dataset_stats}
 
 Generate Python code using Plotly Express to create {num_visualizations} different and insightful visualizations for this data.
 Assume that the data is already loaded into a pandas DataFrame named 'data'.
@@ -34,6 +39,7 @@ Follow these strict guidelines:
 - Define exactly {num_visualizations} Plotly figure objects named 'fig1', 'fig2', ..., 'fig{num_visualizations}'.
 - Do not include any import statements or data-loading code.
 - Do not include filesystem, OS, or network operations.
+- NO IMPORT STATEMENTS IN THE CODE.
 - Use only simple and safe Plotly Express commands.
 - Provide only the code with no explanations or comments.
 
@@ -41,7 +47,7 @@ Code:
 """
     )
     chain = LLMChain(llm=llm, prompt=prompt_template)
-    code = chain.run(data_sample=data_sample, num_visualizations=num_visualizations)
+    code = chain.run(data_sample=data_sample, dataset_stats=dataset_stats, num_visualizations=num_visualizations)
     code = code.strip()
     if code.startswith("```python"):
         code = code[len("```python"):].strip()
@@ -320,8 +326,8 @@ def visualization_section():
     if st.button("Generate Visualizations with AI"):
         with st.spinner("Generating visualization code..."):
             try:
-                # Agent 1: Generate visualization code
-                generated_code = generate_visualization_code(data_sample, num_visualizations)
+                # Agent 1: Generate visualization code (with dataset stats)
+                generated_code = generate_visualization_code(data_sample, data_summary, num_visualizations)
                 st.subheader("Generated Code")
                 st.code(generated_code, language='python')
                 

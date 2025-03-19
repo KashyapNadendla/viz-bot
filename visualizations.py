@@ -279,7 +279,7 @@ def chatbot_interface():
             # Append only the user query and AI answer to the chat history
             st.session_state.chat_history.append(f"**User:** {user_input}")
             st.session_state.chat_history.append(f"**AI:** {answer}")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.sidebar.warning("Please enter a question.")
 

@@ -5,16 +5,22 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_community.vectorstores import FAISS
-# UPDATED: Import a different chain type that supports returning sources
 from langchain.chains.retrieval_qa.base import RetrievalQA
 from langchain.prompts import PromptTemplate
+# NEW IMPORTS for Multi-Query Retriever
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain_core.output_parsers import StrOutputParser
 import os
 import tempfile
+from dotenv import load_dotenv
+
+# Load the environment variables right at the start of this module
+load_dotenv()
 
 # --- Get API Key ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
-    st.error("GOOGLE_API_KEY not found. Please set it in your environment variables.")
+    st.error("GOOGLE_API_KEY not found. Please set it in your .env file.")
     
 def process_uploaded_files(uploaded_files):
     """
@@ -29,7 +35,6 @@ def process_uploaded_files(uploaded_files):
         loader = PyPDFLoader(tmp_file_path)
         documents = loader.load()
         
-        # Add the source filename to each document's metadata
         for doc in documents:
             doc.metadata["source"] = uploaded_file.name
 
@@ -48,13 +53,15 @@ def create_vector_store(text_chunks):
     """
     Creates a FAISS vector store from text chunks.
     """
+    if not text_chunks:
+        return None
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
     vector_store = FAISS.from_documents(text_chunks, embedding=embeddings)
     return vector_store
 
 def get_qa_chain(vector_store):
     """
-    Creates and returns a RetrievalQA chain with a custom prompt and source returning.
+    Creates and returns a RetrievalQA chain with an intelligent Multi-Query retriever.
     """
     prompt_template = """
     You are an expert data-mining assistant. Your task is to provide detailed and accurate answers based on the provided context from a set of documents.
@@ -67,25 +74,42 @@ def get_qa_chain(vector_store):
 
     Instructions:
     1.  Thoroughly analyze the provided context to find the most relevant information.
-    2.  Synthesize the information into a coherent and comprehensive answer.
+    2.  Synthesize the information from all relevant sources into a single, coherent, and comprehensive answer.
     3.  If the context does not contain the answer, state clearly "The provided documents do not contain information on this topic."
     4.  Do not make up information. Your answers must be grounded in the context.
 
     Answer:
     """
     
-    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3, google_api_key=GOOGLE_API_KEY)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3, google_api_key=GOOGLE_API_KEY)
     
     prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
     
-    # Use RetrievalQA chain which is designed to work with a retriever (our vector store)
-    # and can return source documents.
+    # --- UPGRADED RETRIEVER ---
+    # 1. Define the prompt for generating multiple queries
+    query_prompt = PromptTemplate(
+        input_variables=["question"],
+        template="""You are an AI language model assistant. Your task is to generate five 
+        different versions of the given user question to retrieve relevant documents from a vector 
+        database. By generating multiple perspectives on the user question, your goal is to help
+        the user overcome some of the limitations of distance-based similarity search. 
+        Provide these alternative questions separated by newlines.
+        Original question: {question}""",
+    )
+
+    # 2. Create the Multi-Query Retriever
+    retriever = MultiQueryRetriever.from_llm(
+        retriever=vector_store.as_retriever(), 
+        llm=llm,
+        prompt=query_prompt
+    )
+    
     chain = RetrievalQA.from_chain_type(
-        llm=model,
+        llm=llm,
         chain_type="stuff",
-        retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
+        retriever=retriever, # Use the new, more intelligent retriever
         chain_type_kwargs={"prompt": prompt},
-        return_source_documents=True # This is the crucial part!
+        return_source_documents=True
     )
     
     return chain
@@ -94,17 +118,15 @@ def user_input(user_question):
     """
     Handles user input, runs the QA chain, and displays the results with sources.
     """
-    if 'qa_chain' not in st.session_state:
-        st.error("QA Chain not initialized. Please process documents first.")
+    if 'qa_chain' not in st.session_state or st.session_state.qa_chain is None:
+        st.error("The Question-Answering system is not initialized. Please process your documents first.")
         return
 
-    # Run the QA chain
     response = st.session_state.qa_chain({"query": user_question})
     
     st.write("### Answer")
     st.write(response["result"])
 
-    # Display the source documents in an expander
     with st.expander("View Sources"):
         st.write("The following document chunks were used to generate the answer:")
         for doc in response["source_documents"]:
@@ -114,48 +136,78 @@ def user_input(user_question):
 
 def data_mining_engine_section():
     """
-    Main Streamlit interface for the data-mining engine.
+    Main Streamlit interface for the data-mining engine with improved file management.
     """
     st.header("Data-Mining Engine")
     st.write("Upload your unstructured documents (PDFs) and ask questions to find insights.")
 
+    # Initialize session state for file management
+    if "processed_files" not in st.session_state:
+        st.session_state.processed_files = []
+    if "all_chunks" not in st.session_state:
+        st.session_state.all_chunks = []
+
     with st.sidebar:
-        st.subheader("Document Corpus")
+        st.subheader("Document Corpus Management")
         uploaded_files = st.file_uploader(
-            "Upload PDF documents", 
+            "Upload PDF documents to add to the corpus", 
             type="pdf", 
             accept_multiple_files=True
         )
 
-        if st.button("Process Documents"):
+        if st.button("Process New Documents"):
             if uploaded_files:
                 if not GOOGLE_API_KEY:
                     st.error("Cannot process documents. GOOGLE_API_KEY is not configured.")
                     return
 
-                with st.spinner("Processing documents... This may take a moment."):
-                    try:
-                        text_chunks = process_uploaded_files(uploaded_files)
-                        vector_store = create_vector_store(text_chunks)
-                        
-                        # Create and store the QA chain in the session state
-                        st.session_state.qa_chain = get_qa_chain(vector_store)
-                        st.success("Documents processed successfully! You can now ask questions.")
-                    except Exception as e:
-                        st.error(f"An error occurred during processing: {e}")
+                new_files_to_process = [
+                    file for file in uploaded_files if file.name not in st.session_state.processed_files
+                ]
+
+                if not new_files_to_process:
+                    st.warning("All uploaded files have already been processed.")
+                else:
+                    with st.spinner(f"Processing {len(new_files_to_process)} new document(s)..."):
+                        try:
+                            new_chunks = process_uploaded_files(new_files_to_process)
+                            st.session_state.all_chunks.extend(new_chunks)
+                            
+                            vector_store = create_vector_store(st.session_state.all_chunks)
+                            st.session_state.qa_chain = get_qa_chain(vector_store)
+                            
+                            for file in new_files_to_process:
+                                st.session_state.processed_files.append(file.name)
+                            
+                            st.success("New documents processed and added to the corpus!")
+                        except Exception as e:
+                            st.error(f"An error occurred: {e}")
             else:
-                st.warning("Please upload at least one PDF file.")
+                st.warning("Please upload at least one new PDF file to process.")
+
+        if st.session_state.processed_files:
+            st.markdown("---")
+            st.write("**Active Documents in Corpus:**")
+            for filename in st.session_state.processed_files:
+                st.text(f"- {filename}")
+            
+            if st.button("Clear Corpus and History"):
+                st.session_state.processed_files = []
+                st.session_state.all_chunks = []
+                if "qa_chain" in st.session_state:
+                    del st.session_state.qa_chain
+                st.rerun()
 
     st.subheader("Ask a Question")
     
-    if "qa_chain" in st.session_state:
+    if "qa_chain" in st.session_state and st.session_state.qa_chain is not None:
         user_question = st.text_input("What do you want to know from your documents?")
         
         if user_question:
             if not GOOGLE_API_KEY:
                 st.error("Cannot ask questions. GOOGLE_API_KEY is not configured.")
                 return
-            with st.spinner("Searching for answers..."):
+            with st.spinner("Generating sub-queries and searching for answers..."):
                 user_input(user_question)
     else:
         st.info("Please upload and process documents to activate the query engine.")

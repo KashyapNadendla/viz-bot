@@ -17,15 +17,20 @@ scikit-learn>=1.0.0
 scipy>=1.7.0
 
 # LLM integration with LangChain and OpenAI
-openai>=0.28.0
-langchain>=0.2.20
-langchain-core>=0.2.26
-langchain_community>=0.0.1  # Add this line
+openai>=1.0.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-openai>=0.1.0
 chromadb>=0.5.5  # Optional, only if needed
 tiktoken>=0.4.0  # Tokenizer for LLM input estimation
 
 # Pydantic - specified to avoid conflicts
 pydantic>=2.7.4,<3.0.0
 
+
+
 # Environment variable management
 python-dotenv>=1.0.0
+
+langchain-cohere

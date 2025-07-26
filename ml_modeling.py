@@ -180,7 +180,7 @@ def ml_modeling_section():
                         x1=y_test.max(), y1=y_test.max(),
                         line=dict(color='red', dash='dash')
                     )
-                    st.plotly_chart(fig_test)
+                    st.plotly_chart(fig_test, key="test_plot")
 
                     st.write("**Training Set:**")
                     fig_train = px.scatter(
@@ -193,7 +193,7 @@ def ml_modeling_section():
                         x1=y_train.max(), y1=y_train.max(),
                         line=dict(color='red', dash='dash')
                     )
-                    st.plotly_chart(fig_train)
+                    st.plotly_chart(fig_train, key="train_plot")
 
                 with tab2:
                     residuals = y_test - y_pred_test
@@ -201,7 +201,7 @@ def ml_modeling_section():
                         residuals, nbins=30,
                         title='Residuals Distribution (Test Set)'
                     )
-                    st.plotly_chart(fig_residuals)
+                    st.plotly_chart(fig_residuals, key="residuals_plot")
 
                 # Feature Importance
                 if selected_model in ["Decision Tree Regressor", "Random Forest Regressor"]:
@@ -216,7 +216,7 @@ def ml_modeling_section():
                         importance_df, x='Feature', y='Importance',
                         title='Feature Importance'
                     )
-                    st.plotly_chart(fig_importance)
+                    st.plotly_chart(fig_importance, key="importance_plot_regression")
 
             elif problem_type == "Classification":
                 # Evaluation metrics
@@ -235,7 +235,7 @@ def ml_modeling_section():
                     x=sorted(np.unique(y_test)), y=sorted(np.unique(y_test)),
                     title="Confusion Matrix"
                 )
-                st.plotly_chart(fig_cm)
+                st.plotly_chart(fig_cm, key="confusion_matrix")
 
                 # ROC Curve and AUC (for binary classification)
                 if len(np.unique(y_test)) == 2:
@@ -257,7 +257,7 @@ def ml_modeling_section():
                         type='line', x0=0, y0=0, x1=1, y1=1,
                         line=dict(color='red', dash='dash')
                     )
-                    st.plotly_chart(fig_roc)
+                    st.plotly_chart(fig_roc, key="roc_curve")
 
                     # Precision-Recall Curve
                     precision, recall, thresholds_pr = precision_recall_curve(y_test, y_proba)
@@ -266,7 +266,7 @@ def ml_modeling_section():
                         title='Precision-Recall Curve',
                         labels={'x': 'Recall', 'y': 'Precision'}
                     )
-                    st.plotly_chart(fig_pr)
+                    st.plotly_chart(fig_pr, key="precision_recall_curve")
 
                 # Feature Importance
                 if selected_model in ["Decision Tree Classifier", "Random Forest Classifier"]:
@@ -281,7 +281,7 @@ def ml_modeling_section():
                         importance_df, x='Feature', y='Importance',
                         title='Feature Importance'
                     )
-                    st.plotly_chart(fig_importance)
+                    st.plotly_chart(fig_importance, key="importance_plot_classification")
 
         # Convert data sample to JSON string
         data_sample = data.head(5).to_json(orient='records')

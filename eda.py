@@ -73,13 +73,13 @@ def distribution_analysis():
             if plot_type == "Histogram":
                 bins = st.slider("Number of Bins", min_value=5, max_value=100, value=20)
                 fig = px.histogram(data, x=col, nbins=bins, title=f"Histogram of {col}")
-                st.plotly_chart(fig)
+                st.plotly_chart(fig, key=f"histogram_{col}")
             elif plot_type == "Box Plot":
                 fig = px.box(data, y=col, title=f"Box Plot of {col}")
-                st.plotly_chart(fig)
+                st.plotly_chart(fig, key=f"boxplot_{col}")
             elif plot_type == "Violin Plot":
                 fig = px.violin(data, y=col, box=True, title=f"Violin Plot of {col}")
-                st.plotly_chart(fig)
+                st.plotly_chart(fig, key=f"violin_{col}")
             elif plot_type == "KDE Plot":
                 fig, ax = plt.subplots()
                 sns.kdeplot(data[col], shade=True, ax=ax)
@@ -105,11 +105,11 @@ def categorical_analysis():
             if plot_type == "Bar Plot":
                 fig = px.bar(value_counts_df, x=col, y='count', 
                              labels={col: col, 'count': 'Count'}, title=f"Bar Plot of {col}")
-                st.plotly_chart(fig)
+                st.plotly_chart(fig, key=f"bar_{col}")
             elif plot_type == "Pie Chart":
                 fig = px.pie(value_counts_df, names=col, values='count', 
                              title=f"Pie Chart of {col}")
-                st.plotly_chart(fig)
+                st.plotly_chart(fig, key=f"pie_{col}")
     else:
         st.write("No categorical columns available for analysis.")
 
@@ -140,7 +140,7 @@ def correlation_study():
             fig = px.imshow(corr_matrix, text_auto=True, aspect="auto", 
                             color_continuous_scale='RdBu_r', origin='lower')
             fig.update_layout(title=f"{corr_method} Correlation Matrix")
-            st.plotly_chart(fig)
+            st.plotly_chart(fig, key="correlation_matrix")
     else:
         st.write("Not enough numeric columns to compute correlations.")
 
@@ -154,7 +154,7 @@ def outlier_detection():
 
         if method == "IQR Method":
             fig = px.box(data, y=selected_col, title=f"Box Plot of {selected_col}")
-            st.plotly_chart(fig)
+            st.plotly_chart(fig, key=f"outlier_box_{selected_col}")
             q1 = data[selected_col].quantile(0.25)
             q3 = data[selected_col].quantile(0.75)
             iqr = q3 - q1

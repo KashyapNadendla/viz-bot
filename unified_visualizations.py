@@ -98,7 +98,7 @@ Code:
             "numeric_columns": context["numeric_columns"],
             "categorical_columns": context["categorical_columns"],
             "datetime_columns": context["datetime_columns"],
-            "data_sample": json.dumps(context["sample_data"][:3])  # Limit sample size
+            "data_sample": json.dumps(data.head(3).to_dict('records'))  # Use actual data sample
         })
         
         # Clean the code
@@ -112,21 +112,29 @@ Code:
     
     def execute_chart_code(self, code, data):
         """Safely execute the generated chart code"""
-        # Safety checks
+        # Clean the code by removing import statements
+        cleaned_code = ""
+        for line in code.split('\n'):
+            line = line.strip()
+            # Skip import statements and empty lines
+            if not line.startswith('import ') and not line.startswith('from ') and line:
+                cleaned_code += line + '\n'
+        
+        # Safety checks (excluding import since we already removed them)
         disallowed_patterns = [
-            r'\bimport\b', r'\b__\b', r'\bopen\(', r'\beval\(', r'\bexec\(', r'\binput\(',
+            r'\b__\b', r'\bopen\(', r'\beval\(', r'\bexec\(', r'\binput\(',
             r'\bcompile\(', r'\bos\b', r'\bsys\b', r'\bsubprocess\b', r'\bthreading\b',
             r'\bgetattr\(', r'\bsetattr\(', r'\bdelattr\(', r'\bglobals\(', r'\blocals\(',
             r'\bvars\(', r'\bhelp\(',
         ]
         
         for pattern in disallowed_patterns:
-            if re.search(pattern, code):
+            if re.search(pattern, cleaned_code):
                 raise ValueError(f"Disallowed pattern '{pattern}' found in code.")
         
         # Parse for syntax errors
         try:
-            ast.parse(code)
+            ast.parse(cleaned_code)
         except SyntaxError as e:
             raise SyntaxError(f"Syntax error: {e}")
         
@@ -140,7 +148,7 @@ Code:
         safe_locals = {}
         
         try:
-            exec(code, safe_globals, safe_locals)
+            exec(cleaned_code, safe_globals, safe_locals)
             fig = safe_locals.get('fig')
             if fig is None:
                 raise ValueError("The generated code did not produce a 'fig' object.")
@@ -157,13 +165,13 @@ Code:
                 stored_viz_context += f"- {viz['user_request']} ({viz['chart_type']})\n"
         
         prompt_template = PromptTemplate(
-            input_variables=["user_request", "data_context", "chart_info", "stored_visualizations"],
+            input_variables=["user_request", "shape", "columns", "chart_info", "stored_visualizations"],
             template="""
 You are a data analyst. A user requested this chart: "{user_request}"
 
 Data Context:
-- Dataset: {data_context[shape][0]} rows, {data_context[shape][1]} columns
-- Columns: {data_context[columns]}
+- Dataset: {shape[0]} rows, {shape[1]} columns
+- Columns: {columns}
 
 Chart Information:
 {chart_info}
@@ -191,7 +199,8 @@ Provide a comprehensive analysis that helps the user understand their data bette
         chain = LLMChain(llm=self.llm, prompt=prompt_template)
         analysis = chain.run({
             "user_request": user_request,
-            "data_context": data_context,
+            "shape": data_context["shape"],
+            "columns": data_context["columns"],
             "chart_info": chart_info,
             "stored_visualizations": stored_viz_context
         })
@@ -338,6 +347,10 @@ def unified_visualization_section():
     # Create tabs for different modes
     tab1, tab2, tab3 = st.tabs(["🤖 Multi-Agent Visualizations", "💬 Chat & Create", "📊 Visualization Gallery"])
     
+    # Initialize chat history for sidebar
+    if 'sidebar_chat_history' not in st.session_state:
+        st.session_state.sidebar_chat_history = []
+    
     with tab1:
         st.subheader("🤖 Multi-Agent Visualization System")
         st.write("Watch four specialized AI agents work together to create, review, and analyze your visualizations!")
@@ -434,126 +447,150 @@ def unified_visualization_section():
                     
                     st.success("✅ Visualizations generated successfully!")
                     
+                    # Enable sidebar chat after visualizations are created
+                    st.session_state.show_sidebar_chat = True
+                    
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
+        
+
+        
+
     
     with tab2:
         st.subheader("💬 Chat & Create Visualizations")
-        st.write("Chat with me to create custom visualizations or ask questions about your data!")
-        
-        # Chat interface
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Display chat history
-            st.subheader("💬 Conversation")
-            chat_container = st.container()
-            
-            with chat_container:
-                for message in st.session_state.unified_chat_history:
-                    if message["type"] == "user":
-                        st.write(f"**You:** {message['content']}")
-                    elif message["type"] == "assistant":
-                        st.write(f"**AI:** {message['content']}")
-                        if "chart" in message:
-                            st.plotly_chart(message["chart"], use_container_width=True, key=f"chat_chart_{len(st.session_state.unified_chat_history)}")
-                        if "insights" in message:
-                            with st.expander("📊 Chart Insights"):
-                                st.write(message["insights"])
-        
-        with col2:
-            # Data info panel
-            st.subheader("📊 Data Info")
-            st.write(f"**Rows:** {data.shape[0]}")
-            st.write(f"**Columns:** {data.shape[1]}")
-            st.write(f"**Numeric:** {len(st.session_state.data_context['numeric_columns'])}")
-            st.write(f"**Categorical:** {len(st.session_state.data_context['categorical_columns'])}")
-            
-            # Quick data preview
-            with st.expander("Data Preview"):
-                st.dataframe(data.head())
+        st.write("Describe the chart you want and our AI agents will create it for you!")
         
         # User input
-        st.subheader("🎯 Request a Chart or Ask a Question")
         user_input = st.text_input(
-            "Describe the chart you want or ask a question:",
-            placeholder="Create a bar chart showing total sales by region..."
+            "Describe the chart you want:",
+            placeholder="Create a bar chart showing total sales by region...",
+            key="chat_user_input"
         )
         
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("🚀 Generate Chart", type="primary"):
-                if user_input:
-                    with st.spinner("Creating your chart..."):
-                        try:
-                            # Generate chart code
-                            code = st.session_state.unified_viz_system.generate_chart_from_request(
-                                user_input, 
-                                data, 
-                                st.session_state.data_context
-                            )
-                            
-                            # Execute the code
-                            fig = st.session_state.unified_viz_system.execute_chart_code(code, data)
-                            
-                            # Analyze insights
-                            insights = st.session_state.unified_viz_system.analyze_chart_insights(
-                                fig, 
-                                user_input, 
-                                st.session_state.data_context,
-                                st.session_state.stored_visualizations
-                            )
-                            
-                            # Store visualization context
-                            viz_context = st.session_state.unified_viz_system.store_visualization_context(
-                                user_input, fig, insights, st.session_state.data_context
-                            )
-                            viz_context['fig'] = fig
-                            viz_context['insights'] = insights
-                            st.session_state.stored_visualizations.append(viz_context)
-                            
-                            # Store in conversation history
-                            st.session_state.unified_chat_history.append({
-                                "type": "user",
-                                "content": user_input,
-                                "timestamp": datetime.now()
-                            })
-                            
-                            st.session_state.unified_chat_history.append({
-                                "type": "assistant",
-                                "content": f"I've created a chart based on your request: '{user_input}'",
-                                "chart": fig,
-                                "insights": insights,
-                                "timestamp": datetime.now()
-                            })
-                            
-                            # Update memory
-                            memory_context = f"Created visualization: {user_input}. Chart type: {type(fig).__name__}. Key insights: {insights[:200]}..."
-                            st.session_state.unified_viz_system.memory.save_context(
-                                {"input": user_input},
-                                {"output": memory_context}
-                            )
-                            
-                            st.success("Chart generated successfully!")
-                            st.rerun()
-                            
-                        except Exception as e:
-                            st.error(f"Error generating chart: {str(e)}")
-                            st.session_state.unified_chat_history.append({
-                                "type": "assistant",
-                                "content": f"Sorry, I couldn't create that chart. Error: {str(e)}",
-                                "timestamp": datetime.now()
-                            })
-                else:
-                    st.warning("Please enter a chart request.")
+        if st.button("🚀 Start Multi-Agent Chart Creation", type="primary"):
+            if user_input:
+                with st.spinner("🤖 Multi-Agent System Working..."):
+                    try:
+                        # Create data summary for interpretation
+                        data_summary = f"Dataset Summary:\nRows: {data.shape[0]}, Columns: {data.shape[1]}\nColumns: {', '.join(data.columns)}\nUser Request: {user_input}"
+                        data_sample = data.head(5).to_csv(index=False)
+                        
+                        # Agent 1: Code Generator
+                        st.subheader("🤖 Agent 1: Code Generator")
+                        st.write("**Task:** Analyzing your request and generating visualization code...")
+                        with st.spinner("Agent 1 is generating code..."):
+                            # Use the same function as multi-agent tab but with user request
+                            generated_code = generate_visualization_code(data_sample, data_summary, 1)
+                        
+                        st.success("✅ Agent 1 completed: Code generated successfully!")
+                        
+                        with st.expander("🔍 Generated Code"):
+                            st.code(generated_code, language='python')
+                        
+                        # Agent 2: Code Reviewer
+                        st.subheader("🔍 Agent 2: Code Reviewer")
+                        st.write("**Task:** Reviewing code for syntax and security issues...")
+                        with st.spinner("Agent 2 is reviewing code..."):
+                            review_feedback = st.session_state.unified_viz_system.review_code_syntax(generated_code)
+                        
+                        if "no syntax errors detected" not in review_feedback.lower():
+                            st.error("❌ Agent 2 found issues: " + review_feedback)
+                            return
+                        else:
+                            st.success("✅ Agent 2 completed: No syntax errors detected!")
+                            st.info("🔍 Code Review Result: " + review_feedback)
+                        
+                        # Execute the generated code safely
+                        st.subheader("📈 Generated Visualization")
+                        st.write("**Executing the reviewed code...**")
+                        figs = execute_visualization_code(generated_code, data, 1)
+                        
+                        # Display the visualization
+                        for idx, fig in enumerate(figs, start=1):
+                            st.plotly_chart(fig, use_container_width=True, key=f"chat_generated_chart_{user_input}_{idx}")
+                        
+                        # Agent 3: Enhanced interpretation of visualizations
+                        st.subheader("🤖 Agent 3: Visualization Interpreter")
+                        st.write("**Task:** Analyzing generated visualization and extracting insights...")
+                        with st.spinner("Agent 3 is analyzing visualization..."):
+                            interpretation = interpret_visualizations(figs, data_summary)
+                        
+                        st.success("✅ Agent 3 completed: Analysis finished!")
+                        
+                        with st.expander("💡 Visualization Interpretation"):
+                            st.write(interpretation)
+                        
+                        # Agent 4: Discussion Facilitator
+                        st.subheader("🤖 Agent 4: Discussion Facilitator")
+                        st.write("**Task:** Coordinating discussion among all agents and providing final insights...")
+                        with st.spinner("Agent 4 is facilitating discussion..."):
+                            discussion = st.session_state.unified_viz_system.agents_discussion(generated_code, review_feedback, interpretation)
+                        
+                        st.success("✅ Agent 4 completed: Discussion facilitated!")
+                        
+                        with st.expander("🤖 Multi-Agent Discussion"):
+                            st.write(discussion)
+                        
+                        # Store visualization context
+                        viz_context = {
+                            "user_request": user_input,
+                            "chart_type": "User-requested chart",
+                            "insights": interpretation,
+                            "discussion": discussion,
+                            "timestamp": datetime.now(),
+                            "figs": figs
+                        }
+                        st.session_state.stored_visualizations.append(viz_context)
+                        
+                        # Store in conversation history
+                        st.session_state.unified_chat_history.append({
+                            "type": "user",
+                            "content": user_input,
+                            "timestamp": datetime.now()
+                        })
+                        
+                        st.session_state.unified_chat_history.append({
+                            "type": "assistant",
+                            "content": f"I've created a chart based on your request: '{user_input}'",
+                            "chart": figs[0] if figs else None,
+                            "insights": interpretation,
+                            "discussion": discussion,
+                            "timestamp": datetime.now()
+                        })
+                        
+                        st.success("🎉 Chart created successfully with multi-agent collaboration!")
+                        
+                    except Exception as e:
+                        st.error(f"Error in multi-agent process: {str(e)}")
+                        st.session_state.unified_chat_history.append({
+                            "type": "assistant",
+                            "content": f"Sorry, I couldn't create that chart. Error: {str(e)}",
+                            "timestamp": datetime.now()
+                        })
+            else:
+                st.warning("Please enter a chart request.")
         
-        with col2:
-            if st.button("🗑️ Clear Chat"):
-                st.session_state.unified_chat_history = []
-                st.session_state.stored_visualizations = []
-                st.session_state.unified_viz_system.memory.clear()
-                st.success("Chat history and visualizations cleared!")
-                st.rerun()
+        # Show chat history
+        if st.session_state.unified_chat_history:
+            st.subheader("💬 Previous Requests")
+            for i, message in enumerate(st.session_state.unified_chat_history[-5:]):  # Show last 5
+                if message["type"] == "user":
+                    st.write(f"**You:** {message['content']}")
+                elif message["type"] == "assistant":
+                    st.write(f"**AI:** {message['content']}")
+                    if "chart" in message:
+                        st.plotly_chart(message["chart"], use_container_width=True, key=f"history_chart_{i}")
+                    if "insights" in message:
+                        with st.expander(f"📊 Insights for request {i+1}"):
+                            st.write(message["insights"])
+        
+        # Clear history button
+        if st.button("🗑️ Clear History"):
+            st.session_state.unified_chat_history = []
+            st.session_state.stored_visualizations = []
+            st.session_state.unified_viz_system.memory.clear()
+            st.success("History cleared!")
     
     with tab3:
         st.subheader("📊 Visualization Gallery")
@@ -582,7 +619,7 @@ def unified_visualization_section():
         else:
             st.info("No visualizations created yet. Try creating some in the other tabs!")
     
-    # Sidebar for suggestions
+    # Sidebar for suggestions and chat
     with st.sidebar:
         st.header("💡 Suggestions")
         if st.button("Get Visualization Ideas"):
@@ -592,6 +629,89 @@ def unified_visualization_section():
                 st.session_state.stored_visualizations
             )
             st.session_state.suggestions = suggestions
+        
+        # Sidebar Chat Interface
+        if hasattr(st.session_state, 'show_sidebar_chat') and st.session_state.show_sidebar_chat:
+            st.write("---")
+            st.header("💬 Ask About Your Visualizations")
+            st.write("Ask questions about your data, visualizations, or request new charts!")
+            
+            # Show summary of available visualizations
+            if st.session_state.stored_visualizations:
+                st.subheader("📊 Available Visualizations")
+                for i, viz in enumerate(st.session_state.stored_visualizations[-3:]):  # Show last 3
+                    st.write(f"**{i+1}.** {viz['user_request'][:40]}...")
+                    if 'insights' in viz:
+                        st.caption(f"💡 {viz['insights'][:60]}...")
+                st.write("---")
+            
+            # Display chat history
+            if st.session_state.sidebar_chat_history:
+                st.subheader("📝 Chat History")
+                for message in st.session_state.sidebar_chat_history[-5:]:  # Show last 5 messages
+                    if message["type"] == "user":
+                        st.write(f"**You:** {message['content']}")
+                    elif message["type"] == "assistant":
+                        st.write(f"**AI:** {message['content']}")
+                        if "sources" in message:
+                            with st.expander("📚 Sources"):
+                                for source in message["sources"]:
+                                    st.write(f"**Chunk {source['chunk_id']}:**")
+                                    st.write(source["content"])
+                                    st.write("---")
+            
+            # Chat input
+            sidebar_question = st.text_input(
+                "Ask a question about your data or visualizations:",
+                placeholder="What patterns do you see in the visualizations?",
+                key="sidebar_chat_input"
+            )
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                if st.button("🔍 Ask Question", key="sidebar_ask_btn"):
+                    if sidebar_question:
+                        with st.spinner("Analyzing..."):
+                            # Get context from stored visualizations and data
+                            context = f"Dataset: {data.shape[0]} rows, {data.shape[1]} columns\n"
+                            context += f"Columns: {', '.join(data.columns)}\n"
+                            context += f"Stored visualizations: {len(st.session_state.stored_visualizations)}\n"
+                            
+                            if st.session_state.stored_visualizations:
+                                context += "Recent visualizations:\n"
+                                for viz in st.session_state.stored_visualizations[-3:]:  # Last 3 visualizations
+                                    context += f"- {viz['user_request']}\n"
+                                    if 'insights' in viz:
+                                        context += f"  Insights: {viz['insights'][:100]}...\n"
+                            
+                            # Create a simple response based on context
+                            response = generate_contextual_response(sidebar_question, context, st.session_state.stored_visualizations)
+                            
+                            # Store in chat history
+                            st.session_state.sidebar_chat_history.append({
+                                "type": "user",
+                                "content": sidebar_question,
+                                "timestamp": datetime.now()
+                            })
+                            
+                            st.session_state.sidebar_chat_history.append({
+                                "type": "assistant",
+                                "content": response,
+                                "timestamp": datetime.now()
+                            })
+                            
+                            st.success("✅ Answer generated!")
+                            
+                            # Display the response immediately
+                            st.write("**Latest Response:**")
+                            st.write(response)
+                    else:
+                        st.warning("Please enter a question.")
+            
+            with col2:
+                if st.button("🗑️ Clear Chat", key="sidebar_clear_btn"):
+                    st.session_state.sidebar_chat_history = []
+                    st.success("Chat history cleared!")
         
         if 'suggestions' in st.session_state:
             st.write("**Try these visualizations:**")
@@ -647,16 +767,24 @@ Code:
 
 def execute_visualization_code(code, data, num_visualizations=3):
     """Execute the provided code after performing extra safety checks."""
+    # Clean the code by removing import statements
+    cleaned_code = ""
+    for line in code.split('\n'):
+        line = line.strip()
+        # Skip import statements and empty lines
+        if not line.startswith('import ') and not line.startswith('from ') and line:
+            cleaned_code += line + '\n'
+    
     disallowed_patterns = [
-        r'\bimport\b', r'\b__\b', r'\bopen\(', r'\beval\(', r'\bexec\(', r'\binput\(',
+        r'\b__\b', r'\bopen\(', r'\beval\(', r'\bexec\(', r'\binput\(',
         r'\bcompile\(', r'\bos\b', r'\bsys\b', r'\bsubprocess\b', r'\bthreading\b',
         r'\bgetattr\(', r'\bsetattr\(', r'\bdelattr\(', r'\bglobals\(', r'\blocals\(',
         r'\bvars\(', r'\bhelp\(',
     ]
     for pattern in disallowed_patterns:
-        if re.search(pattern, code):
+        if re.search(pattern, cleaned_code):
             raise ValueError(f"Disallowed pattern '{pattern}' found in code.")
-    code_clean = code.strip().replace('\r', '')
+    code_clean = cleaned_code.strip().replace('\r', '')
     try:
         ast.parse(code_clean)
     except SyntaxError as e:
@@ -728,3 +856,47 @@ Now analyze the following visualizations and extract meaningful insights:
     response = llm.invoke([message])
     
     return response.content.strip() 
+
+def generate_contextual_response(question, context, stored_visualizations):
+    """Generate contextual responses based on stored visualizations and data context"""
+    llm = ChatOpenAI(model_name='gpt-4o-mini', temperature=0.7)
+    
+    # Build context from stored visualizations
+    viz_context = ""
+    if stored_visualizations:
+        viz_context = "Recent visualizations and insights:\n"
+        for viz in stored_visualizations[-3:]:  # Last 3 visualizations
+            viz_context += f"- Request: {viz['user_request']}\n"
+            if 'insights' in viz:
+                viz_context += f"  Insights: {viz['insights']}\n"
+            if 'discussion' in viz:
+                viz_context += f"  Discussion: {viz['discussion'][:200]}...\n"
+    
+    prompt_template = PromptTemplate(
+        input_variables=["question", "context", "viz_context"],
+        template="""
+You are an expert data analyst assistant. Answer the user's question based on the provided context about their data and visualizations.
+
+User Question: {question}
+
+Data Context: {context}
+
+Visualization Context: {viz_context}
+
+Provide a helpful, informative response that:
+1. Directly addresses the user's question
+2. References relevant visualizations and insights when applicable
+3. Suggests additional analysis if relevant
+4. Uses the context provided to give specific, data-driven answers
+
+Answer:
+"""
+    )
+    
+    chain = LLMChain(llm=llm, prompt=prompt_template)
+    response = chain.run(
+        question=question,
+        context=context,
+        viz_context=viz_context
+    )
+    return response.strip()

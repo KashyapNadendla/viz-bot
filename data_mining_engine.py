@@ -13,6 +13,11 @@ from langchain_core.output_parsers import StrOutputParser
 import os
 import tempfile
 from dotenv import load_dotenv
+import asyncio
+import nest_asyncio
+
+# Apply nest_asyncio to handle nested event loops
+nest_asyncio.apply()
 
 # Load the environment variables right at the start of this module
 load_dotenv()
@@ -55,64 +60,77 @@ def create_vector_store(text_chunks):
     """
     if not text_chunks:
         return None
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
-    vector_store = FAISS.from_documents(text_chunks, embedding=embeddings)
-    return vector_store
+    
+    try:
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
+        vector_store = FAISS.from_documents(text_chunks, embedding=embeddings)
+        return vector_store
+    except Exception as e:
+        st.error(f"Error creating vector store: {e}")
+        return None
 
 def get_qa_chain(vector_store):
     """
     Creates and returns a RetrievalQA chain with an intelligent Multi-Query retriever.
     """
-    prompt_template = """
-    You are an expert data-mining assistant. Your task is to provide detailed and accurate answers based on the provided context from a set of documents.
+    if vector_store is None:
+        st.error("Vector store is not available. Please process documents first.")
+        return None
+        
+    try:
+        prompt_template = """
+        You are an expert data-mining assistant. Your task is to provide detailed and accurate answers based on the provided context from a set of documents.
 
-    Context:
-    {context}
+        Context:
+        {context}
 
-    Question:
-    {question}
+        Question:
+        {question}
 
-    Instructions:
-    1.  Thoroughly analyze the provided context to find the most relevant information.
-    2.  Synthesize the information from all relevant sources into a single, coherent, and comprehensive answer.
-    3.  If the context does not contain the answer, state clearly "The provided documents do not contain information on this topic."
-    4.  Do not make up information. Your answers must be grounded in the context.
+        Instructions:
+        1.  Thoroughly analyze the provided context to find the most relevant information.
+        2.  Synthesize the information from all relevant sources into a single, coherent, and comprehensive answer.
+        3.  If the context does not contain the answer, state clearly "The provided documents do not contain information on this topic."
+        4.  Do not make up information. Your answers must be grounded in the context.
 
-    Answer:
-    """
-    
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3, google_api_key=GOOGLE_API_KEY)
-    
-    prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-    
-    # --- UPGRADED RETRIEVER ---
-    # 1. Define the prompt for generating multiple queries
-    query_prompt = PromptTemplate(
-        input_variables=["question"],
-        template="""You are an AI language model assistant. Your task is to generate five 
-        different versions of the given user question to retrieve relevant documents from a vector 
-        database. By generating multiple perspectives on the user question, your goal is to help
-        the user overcome some of the limitations of distance-based similarity search. 
-        Provide these alternative questions separated by newlines.
-        Original question: {question}""",
-    )
+        Answer:
+        """
+        
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3, google_api_key=GOOGLE_API_KEY)
+        
+        prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+        
+        # --- UPGRADED RETRIEVER ---
+        # 1. Define the prompt for generating multiple queries
+        query_prompt = PromptTemplate(
+            input_variables=["question"],
+            template="""You are an AI language model assistant. Your task is to generate five 
+            different versions of the given user question to retrieve relevant documents from a vector 
+            database. By generating multiple perspectives on the user question, your goal is to help
+            the user overcome some of the limitations of distance-based similarity search. 
+            Provide these alternative questions separated by newlines.
+            Original question: {question}""",
+        )
 
-    # 2. Create the Multi-Query Retriever
-    retriever = MultiQueryRetriever.from_llm(
-        retriever=vector_store.as_retriever(), 
-        llm=llm,
-        prompt=query_prompt
-    )
-    
-    chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever, # Use the new, more intelligent retriever
-        chain_type_kwargs={"prompt": prompt},
-        return_source_documents=True
-    )
-    
-    return chain
+        # 2. Create the Multi-Query Retriever
+        retriever = MultiQueryRetriever.from_llm(
+            retriever=vector_store.as_retriever(), 
+            llm=llm,
+            prompt=query_prompt
+        )
+        
+        chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=retriever, # Use the new, more intelligent retriever
+            chain_type_kwargs={"prompt": prompt},
+            return_source_documents=True
+        )
+        
+        return chain
+    except Exception as e:
+        st.error(f"Error creating QA chain: {e}")
+        return None
 
 def user_input(user_question):
     """
@@ -122,16 +140,20 @@ def user_input(user_question):
         st.error("The Question-Answering system is not initialized. Please process your documents first.")
         return
 
-    response = st.session_state.qa_chain({"query": user_question})
-    
-    st.write("### Answer")
-    st.write(response["result"])
+    try:
+        response = st.session_state.qa_chain({"query": user_question})
+        
+        st.write("### Answer")
+        st.write(response["result"])
 
-    with st.expander("View Sources"):
-        st.write("The following document chunks were used to generate the answer:")
-        for doc in response["source_documents"]:
-            st.markdown(f"**Source:** `{doc.metadata.get('source', 'Unknown')}` (Page {doc.metadata.get('page', 'N/A')})")
-            st.info(doc.page_content)
+        with st.expander("View Sources"):
+            st.write("The following document chunks were used to generate the answer:")
+            for doc in response["source_documents"]:
+                st.markdown(f"**Source:** `{doc.metadata.get('source', 'Unknown')}` (Page {doc.metadata.get('page', 'N/A')})")
+                st.info(doc.page_content)
+    except Exception as e:
+        st.error(f"Error processing your question: {e}")
+        st.info("This might be due to an async event loop issue. Please try again.")
 
 
 def data_mining_engine_section():
@@ -174,7 +196,14 @@ def data_mining_engine_section():
                             st.session_state.all_chunks.extend(new_chunks)
                             
                             vector_store = create_vector_store(st.session_state.all_chunks)
+                            if vector_store is None:
+                                st.error("Failed to create vector store. Please check your API key and try again.")
+                                return
+                                
                             st.session_state.qa_chain = get_qa_chain(vector_store)
+                            if st.session_state.qa_chain is None:
+                                st.error("Failed to create QA chain. Please try again.")
+                                return
                             
                             for file in new_files_to_process:
                                 st.session_state.processed_files.append(file.name)
@@ -182,6 +211,7 @@ def data_mining_engine_section():
                             st.success("New documents processed and added to the corpus!")
                         except Exception as e:
                             st.error(f"An error occurred: {e}")
+                            st.info("This might be due to an async event loop issue. Please try again.")
             else:
                 st.warning("Please upload at least one new PDF file to process.")
 

@@ -29,7 +29,8 @@ tiktoken>=0.4.0  # Tokenizer for LLM input estimation
 # Pydantic - specified to avoid conflicts
 pydantic>=2.7.4,<3.0.0
 
-
+# Async handling for nested event loops
+nest_asyncio>=1.5.0
 
 # Environment variable management
 python-dotenv>=1.0.0

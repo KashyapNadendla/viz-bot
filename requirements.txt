@@ -35,3 +35,4 @@ nest_asyncio>=1.5.0
 # Environment variable management
 python-dotenv>=1.0.0
 pypdf
+faiss-cpu
